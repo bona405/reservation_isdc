@@ -352,11 +352,38 @@ while True:
 
 logging.basicConfig(filename='res_log.log', level=logging.INFO, format='%(asctime)s - %(levelname)s: %(message)s')
 logging.info(f'ajax_response text: {ajax_response.text}')
-logging.info(f'ajax_response text: {ajax_response.status_code}')
+logging.info(f'ajax_response status: {ajax_response.status_code}')
 for key, value in params.items():
     logging.info(f'{key}: {value}')
 logging.shutdown()
 
+
+# Gists
+token = "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"
+gists_url = "https://api.github.com/gists"
+
+headers = {
+    "Authorization": f"token {token}",
+}
+data = {
+    "public": True,
+    "files": {
+        "variables.txt": {
+            "content": f"name: {name}\n"
+                       f"text_court_name: {text_court_name}\n"
+                       f"target_date: {target_date}\n"
+                       f"ajax_response.status_code: {ajax_response.status_code}\n"
+                       f"ajax_response.text: {ajax_response.text}\n"
+        }
+    }
+}
+response = requests.post(gists_url, headers=headers, data=json.dumps(data))
+
+if response.status_code == 201:
+    print("Gist created successfully.")
+    print("Gist URL:", response.json()["html_url"])
+else:
+    print("Failed to create Gist. Status code:", response.status_code)
 
 while True :
     exit_ = input("\n press enter to quit\n")

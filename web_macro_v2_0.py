@@ -26,6 +26,8 @@ from io import BytesIO
 import cv2
 from google.cloud import vision
 import urllib.parse
+import random
+
 
 ##############################################################################################################
 #################### SET UP #################################################################################
@@ -211,6 +213,7 @@ RunTime1 = 0
 # IsClicked1 = False
 element_time_css = None
 court_time_int = int(court_time)
+mlength = round(random.uniform(2000, 2500), 12)
 
 ###############################################################
 ####################  Loop Start #############################
@@ -241,6 +244,7 @@ print("date selected!")
 if MonthDiff != 0:
     driver.find_element(By.NAME, "nextMon").click()
 
+
 alert_message = ''
 Validation_Check = False
 while Validation_Check == False:
@@ -260,11 +264,11 @@ while Validation_Check == False:
         driver.execute_script("document.querySelector(\"#check\").click();")
         alert = Alert(driver)
         alert.accept()
-        time.sleep(0.3)
+        time.sleep(1.3)
         driver.find_element(By.NAME, "headcount").click()
-        time.sleep(0.3)
+        time.sleep(1.3)
         driver.find_element(By.ID, "user2").click()
-        time.sleep(0.3)
+        time.sleep(1.3)
         driver.find_element(By.ID, "user2_contact").click()
         time.sleep(0.1)
         driver.execute_script("document.getElementById('"+ time_css[court_time_int] +"').click();")
@@ -274,6 +278,7 @@ while Validation_Check == False:
         driver.execute_script("document.getElementsByName('headcount')[0].value='2';")
         driver.execute_script("document.getElementsByName('user2')[0].value='" + user2_name + "';")
         driver.execute_script("document.getElementsByName('user2_contact')[0].value='" + user2_phone + "';")
+        driver.execute_script(f"$('#mlength').val('{mlength}');")
         driver.execute_script("document.getElementById('btnReservation').click();")
         print("Alert Message:", alert_message)
         alert = driver.switch_to.alert

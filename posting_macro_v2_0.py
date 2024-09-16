@@ -10,9 +10,9 @@ import pytz
 import logging
 from PIL import Image
 from io import BytesIO
-import pytesseract
-import cv2
 from google.cloud import vision
+import random
+import sys
 
 ##############################################################################################################
 #################### SET UP #################################################################################
@@ -98,24 +98,6 @@ rbTime_mapping = {
 }
 rbTime = rbTime_mapping.get(court_time, None)
 
-##############################################################################################################
-#################### SET UP #################################################################################
-#############################################################################################################
-
-target_date = target_year+'-'+target_month+'-'+target_day
-target_date_int = datetime.datetime(int(target_year), int(target_month), int(target_day))
-execution_date = year+'-'+month+'-'+day
-
-
-while True:
-    now = datetime.datetime.now()
-    time_until_execution = execution_datetime - now
-    print(time_until_execution)
-    if time_until_execution <= datetime.timedelta(seconds=20):
-        print("20sec or less remaining. Exiting the loop.")
-        break
-    time.sleep(5) # Wait for 1 second before checking again
-
 def get_server_time(url):
     try:
         response = requests.get(url)
@@ -141,36 +123,86 @@ def detect_text(path):
     response = client.text_detection(image=image, image_context=image_context)
     texts = response.text_annotations
     return texts[0].description
+def validate_six_digit_number(number):
+    if number.isdigit() and len(number) == 6:
+        return True
+    else:
+        return False
+def check_iteration(iteration_no, max_no, sleep_time):
+    if iteration_no > max_no:
+        print("\niteration timeout")
+        sys.exit()
+    time.sleep(sleep_time)
+    print("repeated:", iteration_no)
+
+##############################################################################################################
+#################### SET UP #################################################################################
+#############################################################################################################
+target_date = target_year+'-'+target_month+'-'+target_day
+target_date_int = datetime.datetime(int(target_year), int(target_month), int(target_day))
+execution_date = year+'-'+month+'-'+day
+mlength = round(random.uniform(2000, 2500), 12)
+
+
+chars = ['**StandBy**', '                  ',]
+i = 0
+while True:
+    now = datetime.datetime.now()
+    time_until_execution = execution_datetime - now
+    if i >= 1: i = 0
+    else: i += 1
+    print("\033[F" * 1, end="")
+    print(f"{time_until_execution}  {chars[i]}")
+
+    if time_until_execution <= datetime.timedelta(seconds=20):
+        print("20 seconds or less remaining. Exiting the loop.")
+        break
+    time.sleep(1)
 ###############################################################
 #####################  posting  ##################
 ###############################################################
 session = requests.Session()
 ##############  Login  ###################
+iteration_no = 0
 login_data = {
     "web_id": my_id,
     "web_pw": my_pw,
 }
-login_response = session.post(url="https://res.isdc.co.kr/loginCheck.do", data=login_data)
-if "loginCheck.do" not in login_response.url:
-    print("Login successful")
-else:
-    print("Login failed")
+url_log_in_0 = "https://res.isdc.co.kr/loginCheck.do"
+url_log_in_1 = "https://res.isdc.co.kr/rest_loginCheck.do"
+url_log_in = url_log_in_1
+while True:
+    login_response = session.post(url=url_log_in, data=login_data)
+    if login_response.status_code == 200:
+        print("Login successful")
+        break
+    else:
+        print("Login failed")
+        url_log_in = url_log_in_0
+        iteration_no += 1
+        check_iteration(iteration_no, 10, 1)
 
 ##############  Get user name, Phone number  ###################
-user_info_response = session.get(url="https://res.isdc.co.kr/memberModify.do")
-if user_info_response.status_code == 200:
-    soup = BeautifulSoup(user_info_response.text, 'html.parser')
-    name_element = soup.find('input', {'id': 'mem_nm'})
-    phone_number_element = soup.find('input', {'id': 'h_tel_no'})
-    name = name_element['value']
-    phone_number = phone_number_element['value']
-    print("User Name:", name)
-    print("User Phone Number:", phone_number)
-else:
-    print("Failed to fetch the webpage. Status code:", user_info_response.status_code)
+iteration_no = 0
+while True:
+    user_info_response = session.get(url="https://res.isdc.co.kr/memberModify.do")
+    if user_info_response.status_code == 200:
+        soup = BeautifulSoup(user_info_response.text, 'html.parser')
+        name_element = soup.find('input', {'id': 'mem_nm'})
+        phone_number_element = soup.find('input', {'id': 'h_tel_no'})
+        name = name_element['value']
+        phone_number = phone_number_element['value']
+        print("User Name:", name)
+        print("User Phone Number:", phone_number)
+        break
+    else:
+        print("Failed to fetch the webpage. Status code:", user_info_response.status_code)
+        iteration_no += 1
+        check_iteration(iteration_no, 10, 0.5)
 
 execution_timezone = pytz.timezone('Asia/Tokyo')  # Assuming execution time is in GMT+9 timezone
 execution_datetime = execution_timezone.localize(execution_datetime)
+iteration_no = 0
 while True:
     server_time = get_server_time(url="https://res.isdc.co.kr")
     if server_time is not None:
@@ -182,6 +214,8 @@ while True:
             print(f"Server Time: {server_time_gmt9}")
     else:
         print("Failed to retrieve server time. Retrying...")
+        iteration_no += 1
+        check_iteration(iteration_no, 10, 0.5)
 
 
 reservation_data = {
@@ -209,10 +243,15 @@ while True:
         outResEndTime = soup.find('input', {'id': 'outResEndTime'})['value']
         durationType = soup.find('input', {'id': 'durationType'})['value']
         internetBooking = soup.find('input', {'id': 'internetBooking'})['value']
+        break
     else:
-        print("Failed to retrieve the fac_url page. Status code:", fac_info_response.status_code)
+        print("https://res.isdc.co.kr/facilityInfo.do not found. code:", fac_info_response.status_code)
+        iteration_no += 1
+        check_iteration(iteration_no, 10, 0.5)
 
     ##############  Reservation info ttid  ###################
+iteration_no = 0
+while True:
     ttid_val = '0'
     res_table_response = session.post(url="https://res.isdc.co.kr/getTimeTableByDate.do", data=reservation_data)
     if res_table_response.status_code == 200:
@@ -221,11 +260,19 @@ while True:
         if input_element:
             ttid_val = input_element.get('value')
             print("ttid:", ttid_val)
+            break
         else:
-            print("ttid element not found.")
+            print("error: no ttid")
+            iteration_no += 1
+            check_iteration(iteration_no, 10, 0.5)
     else:
-        print("Failed to retrieve the res_table_url page. Status code:", res_table_response.status_code)
-     
+        print("https://res.isdc.co.kr/getTimeTableByDate.do not found. code:", res_table_response.status_code)
+        iteration_no += 1
+        check_iteration(iteration_no, 10, 0.5)
+
+
+iteration_no = 0
+while True:     
     ##############  discount info  ###################
     headers = {
         "Referer": "https://res.isdc.co.kr/facilityInfo.do"
@@ -240,14 +287,24 @@ while True:
             if selected_option:
                 discount = selected_option['value']
                 print("discount:", discount)
+                break
             else:
-                print("Selected option not found.")
+                print("error: no discount")
+                iteration_no += 1
+                check_iteration(iteration_no, 10, 0.5)
         else:
-            print("Select element not found.")
+            print("error: no option")
+            iteration_no += 1
+            check_iteration(iteration_no, 100, 0.01)
     else:
-        print("Failed to retrieve the res_info_response page. Status code:", res_info_response.status_code)
+        print("https://res.isdc.co.kr/reservationInfo.do not found. code:", res_info_response.status_code)
+        iteration_no += 1
+        check_iteration(iteration_no, 10, 0.5)
 
-
+iteration_no = 0
+iteration_no_t = 0
+time_delay = 0.75
+while True:     
     headers = {
         "Referer": "https://res.isdc.co.kr/reservationInfo.do"
     }
@@ -258,12 +315,15 @@ while True:
     user_data = {
         'facId': court_id
     }
+    time.sleep(time_delay)
     userType_response = session.post(url="https://res.isdc.co.kr/checkUserType.do", data=userType_data, headers = headers)
-    time.sleep(0.5)
+    time.sleep(time_delay)
     headcount_response = session.post(url="https://res.isdc.co.kr/checkHeadcount.do", data=user_data, headers = headers)
-    time.sleep(0.5)
+    time.sleep(time_delay)
     user2_response = session.post(url="https://res.isdc.co.kr/checkUser2.do", data=user_data, headers = headers)
-    time.sleep(0.5)
+    time.sleep(time_delay)
+    checkAnswer_response = session.post(url="https://res.isdc.co.kr/checkAnswer.do", data=user_data, headers = headers)
+    time.sleep(time_delay)
     ##############  captchaimg  ###################
     captchaimg_loop_flg = True
     while(captchaimg_loop_flg):
@@ -279,20 +339,24 @@ while True:
         ocr_result = ''
         ocr_result = detect_text('image.png')
         print(ocr_result)
-
+        
         ##############  chkAnswer  ###################
         answer = {
             'answer': ocr_result
         }
-        # Send a GET request with the Referer header
-        chkAnswer_response = session.post(url="https://res.isdc.co.kr/chkAnswer.do", data=answer, headers=headers)
-        if chkAnswer_response.text == '200':
-            print("chkAnswer success!")
-            captchaimg_loop_flg = False
-        else:
-            print("chkAnswer failed")
-            captchaimg_loop_flg = True
-
+        if(validate_six_digit_number(ocr_result)):
+            time.sleep(time_delay)
+            chkAnswer_response = session.post(url="https://res.isdc.co.kr/chkAnswer.do", data=answer, headers=headers)
+            if chkAnswer_response.text == '200':
+                print("chkAnswer success!")
+                captchaimg_loop_flg = False
+            else:
+                print("chkAnswer failed")
+                captchaimg_loop_flg = True
+                iteration_no += 1
+                check_iteration(iteration_no, 10, 0)
+                
+    time.sleep(time_delay)
     ##############  cost info  ###################
     costId = '0'
     cost = '0'
@@ -309,7 +373,7 @@ while True:
         cost = costVO.get('cost')
         print("costId:", costId)
     else:
-        print("Failed to retrieve the cost_info_url page. Status code:", cos_info_response.status_code)
+        print("https://res.isdc.co.kr/getCostInfo.do not found. code:", cos_info_response.status_code)
 
     ############## Final post ###################
     params = {
@@ -324,7 +388,7 @@ while True:
         'teamId': '0',
         'ju_dc': '1',
         'resType': '8',
-        'penaltyFlag': '',
+        'penaltyFlag': 'true',
         'facType': '29',
         'residenceType': '',
         'fresStartDate': '',
@@ -334,6 +398,7 @@ while True:
         'fresStartTime': '',
         'fresEndTime': '',
         'miniHeadcount': '2',
+        'mlength': mlength,
         'facId': court_id,
         'durationType': durationType,
         'inResUserType': inResUserType,
@@ -376,7 +441,10 @@ while True:
         'totalCost': cost,
         'etc' : name+ ' / ' +phone_number+ ',' +user2_name+ ' / ' +user2_phone,
     }
-    time.sleep(0.5)
+    time.sleep(time_delay)
+    # CheckPenalty_response = session.post(url="https://res.isdc.co.kr/checkPenaltyResCnt.do", data=params, headers=headers)
+    # print("CheckPenalty_response: " + CheckPenalty_response.text)
+
     Reservation_response = session.post(url="https://res.isdc.co.kr/insertReservation.do", data=params, headers=headers)
     if Reservation_response.status_code == 200:
         print("insertReservation: " + Reservation_response.text)
@@ -386,12 +454,10 @@ while True:
     if 'RES' in Reservation_response.text:
         print("===== reservaton success!! =====")
         break 
-
-    iteration_no = iteration_no + 1
-    if iteration_no > 10:
-        break
-    time.sleep(0.5)
-    print("repeated : ", iteration_no)
+    time_delay = time_delay + 0.1
+    print("time_delay : ", time_delay)
+    iteration_no_t += 1
+    check_iteration(iteration_no_t, 5, 0.5)
 
 
 logging.basicConfig(filename='res_log.log', level=logging.INFO, format='%(asctime)s - %(levelname)s: %(message)s')
@@ -430,6 +496,4 @@ if response.status_code == 201:
 else:
     print("Failed to create Gist. Status code:", response.status_code)
 
-while True :
-    exit_ = input("\n press enter to quit\n")
-    break
+sys.exit()

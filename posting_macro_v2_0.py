@@ -35,7 +35,6 @@ day='28'
 hour='6'
 minute='58'
 second='0'
-op_mode='0'
 
 # Create ConfigParser object
 config = configparser.ConfigParser()
@@ -59,9 +58,8 @@ day = config['EXECUTION']['day']
 hour  = config['EXECUTION']['hour']
 minute  = config['EXECUTION']['minute']
 second  = config['EXECUTION']['second']
-NumberOfPopups = int(config['MODE']['NumberOfPopups'])
-op_mode = config['MODE']['op_mode']
 IsAutoDate = config['MODE']['AutoDate']
+time_delay = float(config['MODE']['time_delay'])
 
 if(IsAutoDate == '1'):
     current_date = datetime.date.today()
@@ -80,7 +78,6 @@ print("my ID      : "+my_id)
 print("target_date: "+target_year + target_month + target_day)
 print("court_info : "+court_id + "    " +court_time)
 print("partner    : "+user2_name + "            " +user2_phone)
-print("op_mode    : "+op_mode)
 print("##########################################")
 execution_datetime = datetime.datetime(int(year), int(month), int(day), int(hour), int(minute), int(second))
 print('execute on: ' + str(execution_datetime) + '\n')
@@ -295,7 +292,7 @@ while True:
         else:
             print("error: no option")
             iteration_no += 1
-            check_iteration(iteration_no, 100, 0.01)
+            check_iteration(iteration_no, 100, 0.01) #server opened check
     else:
         print("https://res.isdc.co.kr/reservationInfo.do not found. code:", res_info_response.status_code)
         iteration_no += 1
@@ -303,7 +300,7 @@ while True:
 
 iteration_no = 0
 iteration_no_t = 0
-time_delay = 0.75
+# time_delay = 1.5
 while True:     
     headers = {
         "Referer": "https://res.isdc.co.kr/reservationInfo.do"

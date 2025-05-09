@@ -13,6 +13,7 @@ from io import BytesIO
 from google.cloud import vision
 import random
 import sys
+import re
 
 ##############################################################################################################
 #################### SET UP #################################################################################
@@ -137,58 +138,63 @@ def check_iteration(iteration_no, max_no, sleep_time):
         sys.exit()
     time.sleep(sleep_time)
     print("repeated:", iteration_no)
-def safe_post(session, url, data, headers=None, max_retries=5, sleep_time=0.1):
+
+def safe_post(session, url, data, headers=None, max_retries=5, sleep_time=0.1, timeout=30):
     iteration_no = 0
     while iteration_no < max_retries:
         try:
-            if headers is None:
-                response = session.post(url=url, data=data)
-            else:
-                response = session.post(url=url, data=data, headers=headers)
-            if response.status_code == 200:
-                print('URL successful : ' + url)
-                return response
-            raise requests.exceptions.HTTPError(f"Unexpected status code: {response.status_code}")
+            response = session.post(url=url, data=data, headers=headers, timeout=timeout)
+            response.raise_for_status()  
+            print('URL successful : ' + url)
+            return response
         except requests.exceptions.HTTPError as http_err:
-            print(f"HTTP error occurred: {http_err}")
+            log_and_print(f"HTTP error occurred: {http_err}") 
+        except requests.exceptions.ConnectionError as conn_err:
+            log_and_print(f"Connection error occurred: {conn_err}")
+        except requests.exceptions.Timeout as timeout_err:
+            log_and_print(f"Timeout error occurred: {timeout_err}")
         except requests.exceptions.RequestException as req_err:
-            print(f"Request error occurred: {req_err}")
-        except Exception as e:
-            print(f"An error occurred: {e}")
+            log_and_print(f"Request error occurred: {req_err}")
         iteration_no += 1
         print("Retrying...")
         time.sleep(sleep_time)
     print('URL failed : ' + url)
     sys.exit()
+
 def safe_get(session, url, headers=None, max_retries=5, sleep_time=0.1):
     iteration_no = 0
     while iteration_no < max_retries:
         try:
-            if headers is None:
-                response = session.get(url=url)
-            else:
-                response = session.get(url=url, headers=headers)
-            if response.status_code == 200:
-                print('URL successful : ' + url)
-                return response 
-            raise requests.exceptions.HTTPError(f"Unexpected status code: {response.status_code}")
+            response = session.get(url=url, headers=headers)
+            response.raise_for_status()  
+            print('URL successful : ' + url)
+            return response
         except requests.exceptions.HTTPError as http_err:
-            print(f"HTTP error occurred: {http_err}")
+            log_and_print(f"HTTP error occurred: {http_err}") 
+        except requests.exceptions.ConnectionError as conn_err:
+            log_and_print(f"Connection error occurred: {conn_err}")
+        except requests.exceptions.Timeout as timeout_err:
+            log_and_print(f"Timeout error occurred: {timeout_err}")
         except requests.exceptions.RequestException as req_err:
-            print(f"Request error occurred: {req_err}")
-        except Exception as e:
-            print(f"An error occurred: {e}")
+            log_and_print(f"Request error occurred: {req_err}")
         iteration_no += 1
         print("Retrying...")
         time.sleep(sleep_time)
     print('URL failed : ' + url)
     sys.exit()
+
 def log_and_print(message, *args):
     if args: formatted_message = message + ' ' + ' '.join(map(str, args))
     else: formatted_message = message
     logging.info(formatted_message)
     print(formatted_message)
-
+    
+patterns = {
+    'discount_option': re.compile(
+        r'<option[^>]*value=["\']?(\d+)["\']?[^>]*selected',
+        re.DOTALL
+    )
+}
 ##############################################################################################################
 #################### SET UP #################################################################################
 #############################################################################################################
@@ -216,6 +222,8 @@ while True:
 #####################  posting  ##################
 ###############################################################
 session = requests.Session()
+start_time = None
+server_sleep_time = 13
 ##############  Login  ##  Get user name, Phone number  ###################
 login_data = {
     "web_id": my_id,
@@ -264,7 +272,6 @@ reservation_data = {
     'resdate': target_date,
     'facId': court_id,
 }
-# 예약 정보 요청 부분
 text_court_name = ''
 fac_info_response = safe_post(session, url="https://res.isdc.co.kr/facilityInfo.do", data=reservation_data, max_retries=5, sleep_time=0.5)
 soup = BeautifulSoup(fac_info_response.text, 'html.parser')
@@ -287,6 +294,7 @@ ttid_val = '0'
 iteration_no = 0
 while True:
     res_table_response = safe_post(session, url="https://res.isdc.co.kr/getTimeTableByDate.do", data=reservation_data, max_retries=5, sleep_time=0.5)
+    # start_time = time.time()
     soup = BeautifulSoup(res_table_response.text, 'html.parser')
     input_element = soup.find('input', id=rbTime)
     if input_element:
@@ -302,25 +310,27 @@ while True:
 iteration_no = 0
 discount = '0'
 while True:
+    # start_time = time.time()
+    # log_and_print("----------local time(start): ", time.strftime("%H:%M:%S"))
     headers = {
         "Referer": "https://res.isdc.co.kr/facilityInfo.do"
     }
-    res_info_response = safe_post(session, url="https://res.isdc.co.kr/reservationInfo.do", data=reservation_data, headers=headers, max_retries=5, sleep_time=0.5)
+    res_info_response = safe_post(session, url="https://res.isdc.co.kr/reservationInfo.do", data=reservation_data, headers=headers, max_retries=20, sleep_time=0.01, timeout=5)
     start_time = time.time()
-    soup = BeautifulSoup(res_info_response.text, 'html.parser')
-    select_element = soup.find('select', id='discount')
-    if select_element:
-        selected_option = select_element.find('option', selected=True)
-        if selected_option:
-            discount = selected_option['value']
+    log_and_print("----------local time(start): ", time.strftime("%H:%M:%S"))
+
+    if 'discount' in res_info_response.text:
+        match = patterns['discount_option'].search(res_info_response.text)
+        if match:
+            discount = match.group(1)
             log_and_print("discount:", discount)
-            break 
+            break
         else:
-            log_and_print("Error: no discount option selected")
+            log_and_print("Error: discount select found but no selected option")
             iteration_no += 1
             check_iteration(iteration_no, 10, 0.5)
     else:
-        log_and_print("Error: no discount select element found")
+        log_and_print("No discount select element found")
         iteration_no += 1
         check_iteration(iteration_no, 100, 0.01)
 
@@ -471,13 +481,13 @@ while True:
     end_time = time.time()
     elapsed_time = end_time - start_time
     log_and_print("elapsed time : %.6f s" % elapsed_time)
-    server_sleep_time = 13
     if elapsed_time < server_sleep_time:
         additional_sleep = server_sleep_time - elapsed_time
         log_and_print("Sleep additional time : %.6f s" % additional_sleep)
         time.sleep(additional_sleep)
-    Reservation_response = safe_post(session, url="https://res.isdc.co.kr/insertReservation.do", data=params, headers=headers, max_retries=5, sleep_time=0.5)
-
+    log_and_print("----------local time(reserving...): ", time.strftime("%H:%M:%S"))
+    Reservation_response = safe_post(session, url="https://res.isdc.co.kr/insertReservation.do", data=params, headers=headers, max_retries=2, sleep_time=0.1)
+    log_and_print("----------local time(reserved...): ", time.strftime("%H:%M:%S"))
     if Reservation_response.status_code == 200:
         log_and_print("insertReservation: " + Reservation_response.text)
     else:
@@ -486,10 +496,10 @@ while True:
     if 'RES' in Reservation_response.text:
         log_and_print("===== reservaton success!! =====")
         break 
-    time_delay = time_delay + 0.1
-    log_and_print("time_delay : ", time_delay)
+    # time_delay = time_delay + 0.1
+    # log_and_print("time_delay : ", time_delay)
     iteration_no_t += 1
-    check_iteration(iteration_no_t, 5, 0.5)
+    check_iteration(iteration_no_t, 1, 0.5)
 
 # Gists
 token = "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"
@@ -520,3 +530,5 @@ else:
     log_and_print("Failed to create Gist. Status code:", response.status_code)
 
 sys.exit()
+
+
